@@ -37,6 +37,12 @@ module.exports = {
       gasPrice: "auto",
       gas: 12450000,
     },
+    fork: {
+      url: "http://127.0.0.1:8545/",
+      accounts:
+        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+      timeout: 30000,
+    },
     localhost: {
       url: 'http://localhost:8545',
       accounts: {
@@ -63,15 +69,11 @@ module.exports = {
         initialIndex: 1,
       }
     },
-    ftmopera: {
-      url: "https://rpcapi.fantom.network",
+    ftmMainnet: {
+      url: process.env.FTM_MAINNET_URL || " https://rpc.ftm.tools",
       chainId: 250,
-      gasPrice: "auto",
-      accounts: {
-        mnemonic: "",
-        initialIndex: 1,
-      }
-        //
+      accounts:
+        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
     ftmtestnet: {
       url: "https://rpc.testnet.fantom.network",
@@ -121,7 +123,7 @@ module.exports = {
     }
       },
       {
-        version: "0.8.0",
+        version: "0.8.11",
         settings: {
       optimizer: {
         enabled: true,
@@ -130,7 +132,7 @@ module.exports = {
     }
       },
       {
-        version: "0.8.4",
+        version: "0.8.9",
         settings: {
       optimizer: {
         enabled: true,
