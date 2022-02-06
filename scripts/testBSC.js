@@ -6,14 +6,14 @@
 const { providers } = require("ethers");
 const { ethers } = require("hardhat");
 
-//WFTM address for Fantom Opera Mainnet
-const WFTM = "0x21be370d5312f44cb42ce377bc9b8a0cef1a4c83";
+//WBNB address for Fantom Opera Mainnet
+const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 //HyperSwap Router for Fantom Opera Mainnet
-const router = "0x53c153a0df7E050BbEFbb70eE9632061f12795fB";
-const zapInPair = "0x5448a3b93731e7c1d6e6310cb614843fbac21f69"; // jump ftm
-const zapInToken = "0x78DE9326792ce1d6eCA0c978753c6953Cdeedd73"; // jump
-const liveZap = "0x61D791390ed5067E43BBd9760d26Ed2E57d24523";
-const spiritPair = "0xe7e90f5a767406eff87fdad7eb07ef407922ec1d";
+const router = "0x3bc677674df90A9e5D741f28f6CA303357D0E4Ec";
+const zapInPair = "0x13F5088D69b0c417C376747a75c57aABD75e9551"; // jump bnb
+const zapInToken = "0x130025eE738A66E691E6A7a62381CB33c6d9Ae83"; // jump
+// const liveZap = "0x61D791390ed5067E43BBd9760d26Ed2E57d24523";
+const pcsPair = "0xcc4d5f99c6493cf8d4af39b9aa0f2a2eced15934"; // pcs glch bnb
 
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command
@@ -26,21 +26,22 @@ async function main() {
   // Get signers
   const signers = await ethers.getSigners();
   const chainId = (await ethers.provider.getNetwork()).chainId;
-  console.log("chainId: %s", chainId);
+  console.log("\nChainId: %s", chainId);
 
   const [owner] = await ethers.getSigners();
-  console.log("owner wallet: %s", owner.address);
-  let balance = await ethers.provider.getBalance(owner.address);
-  console.log("owner balance: %s FTM", balance / 1e18);
+  console.log("Owner wallet: %s", owner.address);
+  let balance = await ethers.provider.getBalance(signers[0].address);
+  console.log("Owner balance: %s BNB", balance / 1e18);
+
   // UINTMAX for approval
   const UINTMAX = ethers.BigNumber.from(
     "115792089237316195423570985008687907853269984665640564039457584007913129639935"
   );
   // deploy
   console.log("\nDeploy zapper");
-  const Zap = await ethers.getContractFactory("FTMZap");
-  //const zap = await Zap.deploy(WFTM);
-  const zap = await Zap.attach(liveZap);
+  const Zap = await ethers.getContractFactory("BSCZap");
+  const zap = await Zap.deploy(WBNB);
+  // const zap = await Zap.attach(liveZap);
   console.log("New zapper address: ", zap.address);
   const useNativeOn = await zap.useNativeRouter(router);
   if (!useNativeOn) {
@@ -122,16 +123,16 @@ async function main() {
 
   // zapAcross
   console.log("\nzapAcross");
-  const SpiritPair = await ethers.getContractAt("IHyperswapPair", spiritPair);
-  let balSpiritPair = await SpiritPair.balanceOf(signers[0].address);
-  console.log("spiritpair bal ", balSpiritPair.toString());
+  const PcsPair = await ethers.getContractAt("IHyperswapPair", pcsPair);
+  let balPcsPair = await PcsPair.balanceOf(signers[0].address);
+  console.log("spiritpair bal ", balPcsPair.toString());
   console.log("Approving Zapper to spend this LP...");
-  await SpiritPair.connect(signers[0]).approve(zap.address, UINTMAX);
-  if (balSpiritPair.toString() > 0) {
-    await zap.zapAcross(spiritPair, balSpiritPair, router, owner.address);
+  await PcsPair.connect(signers[0]).approve(zap.address, UINTMAX);
+  if (balPcsPair.toString() > 0) {
+    await zap.zapAcross(pcsPair, balPcsPair, router, owner.address);
   }
-  balSpiritPair = await SpiritPair.balanceOf(signers[0].address);
-  console.log("spiritpair bal ", balSpiritPair.toString());
+  balPcsPair = await PcsPair.balanceOf(signers[0].address);
+  console.log("spiritpair bal ", balPcsPair.toString());
   console.log("zappedAccreosososo");
 
   // estimateZapInToken
@@ -152,7 +153,7 @@ async function main() {
   await zap.swapToken(
     zapInToken,
     ethers.utils.parseEther("1.0"),
-    WFTM,
+    WBNB,
     router,
     owner.address
   );
