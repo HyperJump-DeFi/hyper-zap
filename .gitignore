@@ -2,3 +2,4 @@
 package-lock.json
 /cache
 /artifacts
+secret.json

@@ -18,8 +18,8 @@ async function main() {
   // manually to make sure everything is compiled
   // await hre.run('compile');
 
-  const Zap = await ethers.getContractFactory("Zap");
-  const zap = await Zap.deploy(WFTM, router);
+  const Zap = await ethers.getContractFactory("FTMZap");
+  const zap = await Zap.deploy(WFTM);
   console.log("New zapper address: ", zap.address);
  
 }

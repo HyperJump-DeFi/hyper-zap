@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
-
-import "./libraries/ftm/TransferHelper.sol";
-
-import "./interfaces/IHyperswapRouter02.sol";
-import "./interfaces/IUniswapV2Pair.sol";
+pragma solidity 0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router01.sol";
+import "./interfaces/IHyperswapRouter02.sol";
+import "./interfaces/IUniswapV2Pair.sol";
+import "./libraries/ftm/TransferHelper.sol";
+import "./interfaces/IZap.sol";
 
-import "./IZap.sol";
-
-contract FantomZap is Ownable, IZap {
+contract FTMZap is Ownable, IZap {
     using SafeMath for uint;
     using SafeERC20 for IERC20;
 
@@ -23,163 +21,176 @@ contract FantomZap is Ownable, IZap {
     mapping(address => mapping(address => address)) private tokenBridgeForRouter;
     mapping(address => bool) public isFeeOnTransfer;
 
-    IHyperswapRouter02 internal router_;
+    mapping (address => bool) public useNativeRouter;
 
-    constructor(address _WNATIVE, address _router) Ownable() {
-       WNATIVE = _WNATIVE;
-       router_ = IHyperswapRouter02(_router);
+    constructor(address _WNATIVE) Ownable() {
+    WNATIVE = _WNATIVE;
     }
 
     /* ========== External Functions ========== */
 
     receive() external payable {}
 
-    function zapInToken(address _from, uint amount, address _to,address _recipient) external override {
+    function zapInToken(address _from, uint amount, address _to, address routerAddr, address _recipient) external override {
+        _approveTokenIfNeeded(_from, routerAddr);
+
         if (isFeeOnTransfer[_from]) {
             IERC20(_from).transferFrom(msg.sender, address(this), amount);
-            _swapTokenToLP(_from, IERC20(_from).balanceOf(address(this)), _to, _recipient);
+            _swapTokenToLP(_from, IERC20(_from).balanceOf(address(this)), _to, _recipient, routerAddr);
             return;
         } else {
             // From an ERC20 to an LP token, through specified router, going through base asset if necessary
             IERC20(_from).safeTransferFrom(msg.sender, address(this), amount);
             // we'll need this approval to add liquidity
-            _swapTokenToLP(_from, amount, _to, _recipient);
+            _approveTokenIfNeeded(_from, routerAddr);
+            _swapTokenToLP(_from, amount, _to, _recipient, routerAddr);
             return;
         }
     }
 
-    function estimateZapInToken(address _from, address _to, uint _amt) public view override returns (uint256, uint256) {
+    function estimateZapInToken(address _from, address _to, address _router, uint _amt) public view override returns (uint256, uint256) {
         // get pairs for desired lp
-        IUniswapV2Pair pair = IUniswapV2Pair(_to);
-        if (_from == pair.token0() || _from == pair.token1()) { // check if we already have one of the assets
+        if (_from == IUniswapV2Pair(_to).token0() || _from == IUniswapV2Pair(_to).token1()) { // check if we already have one of the assets
             // if so, we're going to sell half of _from for the other token we need
             // figure out which token we need, and approve
-            address other = _from == pair.token0() ? pair.token1() : pair.token0();
+            address other = _from == IUniswapV2Pair(_to).token0() ? IUniswapV2Pair(_to).token1() : IUniswapV2Pair(_to).token0();
             // calculate amount of _from to sell
             uint sellAmount = _amt.div(2);
             // execute swap
-            uint otherAmount = _estimateSwap(_from, sellAmount, other);
-            if (_from == pair.token0()) {
+            uint otherAmount = _estimateSwap(_from, sellAmount, other, _router);
+            if (_from == IUniswapV2Pair(_to).token0()) {
                 return (sellAmount, otherAmount);
             } else {
                 return (otherAmount, sellAmount);
             }
         } else {
             // go through native token for highest liquidity
-            uint nativeAmount = _from == WNATIVE ? _amt : _estimateSwap(_from, _amt, WNATIVE);
-            if (WNATIVE == pair.token0()) {
-                return (nativeAmount.div(2), _estimateSwap(WNATIVE, nativeAmount.div(2), pair.token1()));
+            uint nativeAmount = _from == WNATIVE ? _amt : _estimateSwap(_from, _amt, WNATIVE, _router);
+            if (WNATIVE == IUniswapV2Pair(_to).token0()) {
+                return (nativeAmount.div(2), _estimateSwap(WNATIVE, nativeAmount.div(2), IUniswapV2Pair(_to).token1(), _router ));
             }
-            if (WNATIVE == pair.token1()) {
-                return (_estimateSwap(WNATIVE, nativeAmount.div(2), pair.token0()), nativeAmount.div(2));
+            if (WNATIVE == IUniswapV2Pair(_to).token1()) {
+                return (_estimateSwap(WNATIVE, nativeAmount.div(2), IUniswapV2Pair(_to).token0(), _router ), nativeAmount.div(2));
             }
-                return (_estimateSwap(WNATIVE, nativeAmount.div(2), pair.token0()), _estimateSwap(WNATIVE, nativeAmount.div(2), pair.token1()));
+                return (_estimateSwap(WNATIVE, nativeAmount.div(2), IUniswapV2Pair(_to).token0(), _router ), _estimateSwap(WNATIVE, nativeAmount.div(2), IUniswapV2Pair(_to).token1(), _router));
         }
     }
 
-    function zapIn(address _to, address _recipient) external payable override {
+    function zapIn(address _to, address routerAddr, address _recipient) external payable override {
         // from Native to an LP token through the specified router
-        _swapNativeToLP(_to, msg.value, _recipient);
+        _swapNativeToLP(_to, msg.value, _recipient, routerAddr);
     }
 
-    function zapAcross(address _from, uint amount, address _recipient) external override {
+    function zapAcross(address _from, uint amount, address _toRouter, address _recipient) external override {
         IERC20(_from).safeTransferFrom(msg.sender, address(this), amount);
 
         IUniswapV2Pair pair = IUniswapV2Pair(_from);
+        _approveTokenIfNeeded(pair.token0(), _toRouter);
+        _approveTokenIfNeeded(pair.token1(), _toRouter);
 
         IERC20(_from).safeTransfer(_from, amount);
         uint amt0;
         uint amt1;
         (amt0, amt1) = pair.burn(address(this));
-        router_.addLiquidity(pair.token0(), pair.token1(), amt0, amt1, 0, 0, _recipient, block.timestamp);
+        IHyperswapRouter02(_toRouter).addLiquidity(pair.token0(), pair.token1(), amt0, amt1, 0, 0, _recipient, block.timestamp);
     }
 
-    function zapOut(address _from, uint amount, address _recipient) external override {
+    function zapOut(address _from, uint amount, address routerAddr, address _recipient) external override {
         // from an LP token to Native through specified router
         // take the LP token
         IERC20(_from).safeTransferFrom(msg.sender, address(this), amount);
-        
+        _approveTokenIfNeeded(_from, routerAddr);
 
         // get pairs for LP
-        IUniswapV2Pair pair = IUniswapV2Pair(_from);
-        address token0 = pair.token0();
-        address token1 = pair.token1();
+        address token0 = IUniswapV2Pair(_from).token0();
+        address token1 = IUniswapV2Pair(_from).token1();
+        _approveTokenIfNeeded(token0, routerAddr);
+        _approveTokenIfNeeded(token1, routerAddr);
         // check if either is already native token
         if (token0 == WNATIVE || token1 == WNATIVE) {
             // if so, we only need to swap one, figure out which and how much
             address token = token0 != WNATIVE ? token0 : token1;
             uint amtToken;
             uint amtFTM;
-            (amtToken, amtFTM) = router_.removeLiquidityFTM(token, amount, 0, 0, address(this), block.timestamp);
+            (amtToken, amtFTM) = IHyperswapRouter02(routerAddr).removeLiquidityFTM(token, amount, 0, 0, address(this), block.timestamp);
             // swap with msg.sender as recipient, so they already get the Native
-            _swapTokenForNative(token, amtToken, _recipient);
+            _swapTokenForNative(token, amtToken, _recipient, routerAddr);
             // send other half of Native
             TransferHelper.safeTransferFTM(_recipient, amtFTM);
         } else {
             // convert both for Native with msg.sender as recipient
             uint amt0;
             uint amt1;
-            (amt0, amt1) = router_.removeLiquidity(token0, token1, amount, 0, 0, address(this), block.timestamp);
-            _swapTokenForNative(token0, amt0, _recipient);
-            _swapTokenForNative(token1, amt1, _recipient);
+            (amt0, amt1) = IHyperswapRouter02(routerAddr).removeLiquidity(token0, token1, amount, 0, 0, address(this), block.timestamp);
+            _swapTokenForNative(token0, amt0, _recipient, routerAddr);
+            _swapTokenForNative(token1, amt1, _recipient, routerAddr);
         }
     }
 
-    function zapOutToken(address _from, uint amount, address _to, address _recipient) external override {
+    function zapOutToken(address _from, uint amount, address _to, address routerAddr, address _recipient) external override {
         // from an LP token to an ERC20 through specified router
         IERC20(_from).safeTransferFrom(msg.sender, address(this), amount);
-        
+        _approveTokenIfNeeded(_from, routerAddr);
 
-        IUniswapV2Pair pair = IUniswapV2Pair(_from);
-        address token0 = pair.token0();
-        address token1 = pair.token1();
+        address token0 = IUniswapV2Pair(_from).token0();
+        address token1 = IUniswapV2Pair(_from).token1();
+        _approveTokenIfNeeded(token0, routerAddr);
+        _approveTokenIfNeeded(token1, routerAddr);
         uint amt0;
         uint amt1;
-        (amt0, amt1) = router_.removeLiquidity(token0, token1, amount, 0, 0, address(this), block.timestamp);
+        (amt0, amt1) = IUniswapV2Router01(routerAddr).removeLiquidity(token0, token1, amount, 0, 0, address(this), block.timestamp);
         if (token0 != _to) {
-            amt0 = _swap(token0, amt0, _to, address(this));
+            amt0 = _swap(token0, amt0, _to, address(this), routerAddr);
         }
         if (token1 != _to) {
-            amt1 = _swap(token1, amt1, _to, address(this));
+            amt1 = _swap(token1, amt1, _to, address(this), routerAddr);
         }
         IERC20(_to).safeTransfer(_recipient, amt0.add(amt1));
     }
 
-    function swapToken(address _from, uint amount, address _to, address _recipient) external override {
+    function swapToken(address _from, uint amount, address _to, address routerAddr, address _recipient) external override {
         IERC20(_from).safeTransferFrom(msg.sender, address(this), amount);
-        _swap(_from, amount, _to, _recipient);
+        _approveTokenIfNeeded(_from, routerAddr);
+        _swap(_from, amount, _to, _recipient, routerAddr);
     }
 
-    function swapToNative(address _from, uint amount, address _recipient) external override {
+    function swapToNative(address _from, uint amount, address routerAddr, address _recipient) external override {
         IERC20(_from).safeTransferFrom(msg.sender, address(this), amount);
-        _swapTokenForNative(_from, amount, _recipient);
+        _approveTokenIfNeeded(_from, routerAddr);
+        _swapTokenForNative(_from, amount, _recipient, routerAddr);
     }
 
 
     /* ========== Private Functions ========== */
 
-    function _swapTokenToLP(address _from, uint amount, address _to, address recipient) private returns (uint) {
-        // get pairs for desired lp
-        IUniswapV2Pair pair = IUniswapV2Pair(_to);
-        if (_from == pair.token0() || _from == pair.token1()) { // check if we already have one of the assets
-            // if so, we're going to sell half of _from for the other token we need
-            // figure out which token we need, and approve
-            address other = _from == pair.token0() ? pair.token1() : pair.token0();
-            // calculate amount of _from to sell
-            uint sellAmount = amount.div(2);
-            // execute swap
-            uint otherAmount = _swap(_from, sellAmount, other, address(this));
-            uint liquidity;
-            ( , , liquidity) = router_.addLiquidity(_from, other, amount.sub(sellAmount), otherAmount, 0, 0, recipient, block.timestamp);
-            return liquidity;
-        } else {
-            // go through native token for highest liquidity
-            uint nativeAmount = _swapTokenForNative(_from, amount, address(this));
-            return _swapNativeToLP(_to, nativeAmount, recipient);
+    function _approveTokenIfNeeded(address token, address router) private {
+        if (IERC20(token).allowance(address(this), router) == 0) {
+            IERC20(token).safeApprove(router, type(uint).max);
         }
     }
 
-    function _swapNativeToLP(address _LP, uint amount, address recipient) private returns (uint) {
+    function _swapTokenToLP(address _from, uint amount, address _to, address recipient, address routerAddr) private returns (uint) {
+                // get pairs for desired lp
+        if (_from == IUniswapV2Pair(_to).token0() || _from == IUniswapV2Pair(_to).token1()) { // check if we already have one of the assets
+            // if so, we're going to sell half of _from for the other token we need
+            // figure out which token we need, and approve
+            address other = _from == IUniswapV2Pair(_to).token0() ? IUniswapV2Pair(_to).token1() : IUniswapV2Pair(_to).token0();
+            _approveTokenIfNeeded(other, routerAddr);
+            // calculate amount of _from to sell
+            uint sellAmount = amount.div(2);
+            // execute swap
+            uint otherAmount = _swap(_from, sellAmount, other, address(this), routerAddr);
+            uint liquidity;
+            ( , , liquidity) = IUniswapV2Router01(routerAddr).addLiquidity(_from, other, amount.sub(sellAmount), otherAmount, 0, 0, recipient, block.timestamp);
+            return liquidity;
+        } else {
+            // go through native token for highest liquidity
+            uint nativeAmount = _swapTokenForNative(_from, amount, address(this), routerAddr);
+            return _swapNativeToLP(_to, nativeAmount, recipient, routerAddr);
+        }
+    }
+
+    function _swapNativeToLP(address _LP, uint amount, address recipient, address routerAddress) private returns (uint) {
             // LP
             IUniswapV2Pair pair = IUniswapV2Pair(_LP);
             address token0 = pair.token0();
@@ -187,30 +198,40 @@ contract FantomZap is Ownable, IZap {
             uint liquidity;
             if (token0 == WNATIVE || token1 == WNATIVE) {
                 address token = token0 == WNATIVE ? token1 : token0;
-                ( , , liquidity) = _swapHalfNativeAndProvide(token, amount, recipient);
+                ( , , liquidity) = _swapHalfNativeAndProvide(token, amount, routerAddress, recipient);
             } else {
-                ( , , liquidity) = _swapNativeToEqualTokensAndProvide(token0, token1, amount, recipient);
+                ( , , liquidity) = _swapNativeToEqualTokensAndProvide(token0, token1, amount, routerAddress, recipient);
             }
             return liquidity;
     }
 
-    function _swapHalfNativeAndProvide(address token, uint amount, address recipient) private returns (uint, uint, uint) {
+    function _swapHalfNativeAndProvide(address token, uint amount, address routerAddress, address recipient) private returns (uint, uint, uint) {
             uint swapValue = amount.div(2);
-            uint tokenAmount = _swapNativeForToken(token, swapValue, address(this));
-            return router_.addLiquidityFTM{value : amount.sub(swapValue)}(token, tokenAmount, 0, 0, recipient, block.timestamp);
+            uint tokenAmount = _swapNativeForToken(token, swapValue, address(this), routerAddress);
+            _approveTokenIfNeeded(token, routerAddress);
+            if (useNativeRouter[routerAddress]) {
+                IHyperswapRouter02 router = IHyperswapRouter02(routerAddress);
+                return router.addLiquidityFTM{value : amount.sub(swapValue)}(token, tokenAmount, 0, 0, recipient, block.timestamp);
+            }
+            else {
+                IUniswapV2Router01 router = IUniswapV2Router01(routerAddress);
+                return router.addLiquidityETH{value : amount.sub(swapValue)}(token, tokenAmount, 0, 0, recipient, block.timestamp);
+            }
     }
 
-    function _swapNativeToEqualTokensAndProvide(address token0, address token1, uint amount, address recipient) private returns (uint, uint, uint) {
+    function _swapNativeToEqualTokensAndProvide(address token0, address token1, uint amount, address routerAddress, address recipient) private returns (uint, uint, uint) {
             uint swapValue = amount.div(2);
-            uint token0Amount = _swapNativeForToken(token0, swapValue, address(this));
-            uint token1Amount = _swapNativeForToken(token1, amount.sub(swapValue), address(this));
-            return router_.addLiquidity(token0, token1, token0Amount, token1Amount, 0, 0, recipient, block.timestamp);
+            uint token0Amount = _swapNativeForToken(token0, swapValue, address(this), routerAddress);
+            uint token1Amount = _swapNativeForToken(token1, amount.sub(swapValue), address(this), routerAddress);
+            _approveTokenIfNeeded(token0, routerAddress);
+            _approveTokenIfNeeded(token1, routerAddress);
+            IUniswapV2Router01 router = IUniswapV2Router01(routerAddress);
+            return router.addLiquidity(token0, token1, token0Amount, token1Amount, 0, 0, recipient, block.timestamp);
     }
 
-    function _swapNativeForToken(address token, uint value, address recipient) private returns (uint) {
+    function _swapNativeForToken(address token, uint value, address recipient, address routerAddr) private returns (uint) {
         address[] memory path;
-
-        address routerAddr = address(router_);
+        IHyperswapRouter02 router = IHyperswapRouter02(routerAddr);
 
         if (tokenBridgeForRouter[token][routerAddr] != address(0)) {
             path = new address[](3);
@@ -223,38 +244,36 @@ contract FantomZap is Ownable, IZap {
             path[1] = token;
         }
 
-        uint[] memory amounts = router_.swapExactFTMForTokens{value : value}(0, path, recipient, block.timestamp);
+        uint[] memory amounts = router.swapExactFTMForTokens{value : value}(0, path, recipient, block.timestamp);
         return amounts[amounts.length - 1];
     }
 
-    function _swapTokenForNative(address token, uint amount, address recipient) private returns (uint) {
+    function _swapTokenForNative(address token, uint amount, address recipient, address routerAddr) private returns (uint) {
         address[] memory path;
-
-        address routerAddr = address(router_);
+        IHyperswapRouter02 router = IHyperswapRouter02(routerAddr);
 
         if (tokenBridgeForRouter[token][routerAddr] != address(0)) {
             path = new address[](3);
             path[0] = token;
             path[1] = tokenBridgeForRouter[token][routerAddr];
-            path[2] = WNATIVE;
+            path[2] = router.WFTM();
         } else {
             path = new address[](2);
             path[0] = token;
-            path[1] = WNATIVE;
+            path[1] = router.WFTM();
         }
-        
 
         if (isFeeOnTransfer[token]) {
-            router_.swapExactTokensForFTMSupportingFeeOnTransferTokens(amount, 0, path, recipient, block.timestamp);
+            router.swapExactTokensForFTMSupportingFeeOnTransferTokens(amount, 0, path, recipient, block.timestamp);
             return IERC20(token).balanceOf(address(this));
         } else {
-            uint[] memory amounts = router_.swapExactTokensForFTM(amount, 0, path, recipient, block.timestamp);
+            uint[] memory amounts = router.swapExactTokensForFTM(amount, 0, path, recipient, block.timestamp);
             return amounts[amounts.length - 1];
         }
     }
 
-    function _swap(address _from, uint amount, address _to, address recipient) private returns (uint) {
-        address routerAddr = address(router_);
+    function _swap(address _from, uint amount, address _to, address recipient, address routerAddr) private returns (uint) {
+        IHyperswapRouter02 router = IHyperswapRouter02(routerAddr);
 
         address fromBridge = tokenBridgeForRouter[_from][routerAddr];
         address toBridge = tokenBridgeForRouter[_to][routerAddr];
@@ -326,17 +345,17 @@ contract FantomZap is Ownable, IZap {
         uint[] memory amounts;
 
         if (isFeeOnTransfer[_from]) {
-            router_.swapExactTokensForTokensSupportingFeeOnTransferTokens(amount, 0, path, recipient, block.timestamp);
+            router.swapExactTokensForTokensSupportingFeeOnTransferTokens(amount, 0, path, recipient, block.timestamp);
             return IERC20(_to).balanceOf(address(this));
         } else {
-            amounts = router_.swapExactTokensForTokens(amount, 0, path, recipient, block.timestamp);
+            amounts = router.swapExactTokensForTokens(amount, 0, path, recipient, block.timestamp);
         }
 
         return amounts[amounts.length - 1];
     }
 
-    function _estimateSwap(address _from, uint amount, address _to) private view returns (uint) {
-        address routerAddr = address(router_);
+    function _estimateSwap(address _from, uint amount, address _to, address routerAddr) private view returns (uint) {
+        IHyperswapRouter02 router = IHyperswapRouter02(routerAddr);
 
         address fromBridge = tokenBridgeForRouter[_from][routerAddr];
         address toBridge = tokenBridgeForRouter[_to][routerAddr];
@@ -405,15 +424,15 @@ contract FantomZap is Ownable, IZap {
             path[2] = _to;
         }
 
-        uint[] memory amounts = router_.getAmountsOut(amount, path);
+        uint[] memory amounts = router.getAmountsOut(amount, path);
         return amounts[amounts.length - 1];
     }
 
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
-    function setTokenBridgeForRouter(address token, address bridgeToken) external onlyOwner {
-       tokenBridgeForRouter[token][address(router_)] = bridgeToken;
+    function setTokenBridgeForRouter(address token, address router, address bridgeToken) external onlyOwner {
+       tokenBridgeForRouter[token][router] = bridgeToken;
     }
 
     function withdraw(address token) external onlyOwner {
@@ -425,11 +444,11 @@ contract FantomZap is Ownable, IZap {
         IERC20(token).transfer(owner(), IERC20(token).balanceOf(address(this)));
     }
 
-    function setIsFeeOnTransfer(address token) external onlyOwner {
-        isFeeOnTransfer[token] = true;
+    function setUseNativeRouter(address router) external onlyOwner {
+        useNativeRouter[router] = true;
     }
 
-    function setRouter(address _router) external onlyOwner {
-        router_ = IHyperswapRouter02(_router);
+    function setIsFeeOnTransfer(address token) external onlyOwner {
+        isFeeOnTransfer[token] = true;
     }
 }
