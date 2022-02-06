@@ -37,5 +37,5 @@ The Zapper contract must be approved to use the tokens (both single tokens or to
 ## Scripts
 - `deployBSC` used to deploy Zapper to BSC Mainnet
 - `deployFTM` used to deploy Zapper to Fantom Opera Mainnet
-- `approvePair` used to approve and LP pair to interact with the Zapper
+- `approvePair` used to approve a LP pair to interact with the Zapper
 
