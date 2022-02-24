@@ -56,14 +56,12 @@ module.exports = {
       accounts:
         process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
-    bscmainnet: {
-      url: "https://bsc-dataseed.binance.org/",
+    bscMainnet: {
+      url: "https://speedy-nodes-nyc.moralis.io/d3ee0268200824bd00a56359/bsc/mainnet/archive",
       chainId: 56,
       gasPrice: "auto",
-      accounts: {
-        mnemonic: "",
-        initialIndex: 1,
-      },
+      accounts:
+        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
     ftmMainnet: {
       url: process.env.FTM_MAINNET_URL || " https://rpc3.fantom.network",
@@ -140,6 +138,6 @@ module.exports = {
     ],
   },
   etherscan: {
-    apiKey: "M7N5VQAZF59QIA5CI8W8FHZ8Y8JZ1YKK5H", // process.env.BSCSCAN_API_KEY, // M7N5VQAZF59QIA5CI8W8FHZ8Y8JZ1YKK5H// BSCSCAN"9MIGMDA2VADGXD5DF97XKV5CXH94YY88SR", // FTMscan :"M7N5VQAZF59QIA5CI8W8FHZ8Y8JZ1YKK5H", // process.env.BSCSCAN_API_KEY, // M7N5VQAZF59QIA5CI8W8FHZ8Y8JZ1YKK5H
+    apiKey: "9MIGMDA2VADGXD5DF97XKV5CXH94YY88SR", // process.env.BSCSCAN_API_KEY, // M7N5VQAZF59QIA5CI8W8FHZ8Y8JZ1YKK5H// BSCSCAN"9MIGMDA2VADGXD5DF97XKV5CXH94YY88SR", // FTMscan :"M7N5VQAZF59QIA5CI8W8FHZ8Y8JZ1YKK5H", // process.env.BSCSCAN_API_KEY, // M7N5VQAZF59QIA5CI8W8FHZ8Y8JZ1YKK5H
   },
 };

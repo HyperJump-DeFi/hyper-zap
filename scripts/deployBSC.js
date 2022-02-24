@@ -20,7 +20,7 @@ async function main() {
 
   // We get the contract to deploy
   const Zap = await ethers.getContractFactory("BSCZap");
-  const zap = await Zap.deploy(WBNB, router);
+  const zap = await Zap.deploy(WBNB);
   console.log("New zapper address: ", zap.address);
 
   //await zap.deployed();

@@ -10,10 +10,11 @@ const { ethers } = require("hardhat");
 const WBNB = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c";
 //HyperSwap Router for Fantom Opera Mainnet
 const router = "0x3bc677674df90A9e5D741f28f6CA303357D0E4Ec";
-const zapInPair = "0x13F5088D69b0c417C376747a75c57aABD75e9551"; // jump bnb
+// const zapInPair = "0x13F5088D69b0c417C376747a75c57aABD75e9551"; // jump bnb
 const zapInToken = "0x130025eE738A66E691E6A7a62381CB33c6d9Ae83"; // jump
 // const liveZap = "0x61D791390ed5067E43BBd9760d26Ed2E57d24523";
 const pcsPair = "0xcc4d5f99c6493cf8d4af39b9aa0f2a2eced15934"; // pcs glch bnb
+const zapInPair = "0xf2e4e3f9b58b3edac88ad11d689a23f3119a782d"; // busd wbnb hyperjump pair
 
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command
@@ -48,7 +49,7 @@ async function main() {
     console.log("useNativeRouter is off, setting....");
     await zap.setUseNativeRouter(router);
   } else {
-    console.log("useNativeRotuer is on!");
+    console.log("useNativeRouter is on!");
   }
 
   // approves
@@ -72,7 +73,7 @@ async function main() {
   console.log("Approving Zapper to spend this token...");
   await InToken.connect(signers[0]).approve(zap.address, UINTMAX);
 
-  // zapIn
+  // zapInToken
   console.log("\nzapInToken", signers[0].address);
   await zap.zapInToken(
     zapInToken,
@@ -101,8 +102,8 @@ async function main() {
   console.log("zapped...");
 
   // zapIn
-  console.log("\nzapIn", owner.address);
-  const options = { value: ethers.utils.parseEther("1.0") };
+  console.log("\nzapIn");
+  const options = { value: ethers.utils.parseEther("0.1") };
   await zap.zapIn(zapInPair, router, owner.address, options);
   console.log("zapped in...");
 
@@ -132,7 +133,7 @@ async function main() {
     await zap.zapAcross(pcsPair, balPcsPair, router, owner.address);
   }
   balPcsPair = await PcsPair.balanceOf(signers[0].address);
-  console.log("spiritpair bal ", balPcsPair.toString());
+  console.log("pcs lp pair bal ", balPcsPair.toString());
   console.log("zappedAccreosososo");
 
   // estimateZapInToken
