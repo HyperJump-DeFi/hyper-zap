@@ -22,7 +22,7 @@ library TransferHelper {
         require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: TRANSFER_FROM_FAILED');
     }
 
-    function safeTransferMETIS(address to, uint value) internal {
+    function safeTransferMetis(address to, uint value) internal {
         (bool success,) = to.call{value:value}(new bytes(0));
         require(success, 'TransferHelper: METIS_TRANSFER_FAILED');
     }
