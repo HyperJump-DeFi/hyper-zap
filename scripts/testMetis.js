@@ -12,7 +12,7 @@ const METIS = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
 const router = "0xd96aeE439e6e5B4f3544bF105eb78F3b8B6CD774";
 const zapInPair = "0xc33d8ae2c4f5592b1987e263b2a124cd33e1f624"; // jump metis
 const zapInToken = "0xe3c82a836ec85311a433fbd9486efaf4b1afbf48"; // jump
-const liveZap = "0x61D791390ed5067E43BBd9760d26Ed2E57d24523";
+const liveZap = "TBD";
 const netswapPair_address = "0xCC603FE067651e6251E22C8008dB0E47f30D3db2";
 
 async function main() {
@@ -40,7 +40,7 @@ async function main() {
   // deploy
   console.log("\nDeploy zapper");
   const Zap = await ethers.getContractFactory("MetisZap");
-  const zap = await Zap.deploy(METIS);
+  const zap = await Zap.deploy();
   //const zap = await Zap.attach(liveZap);
   console.log("New zapper address: ", zap.address);
   const useNativeOn = await zap.useNativeRouter(router);

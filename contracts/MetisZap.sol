@@ -17,14 +17,13 @@ contract MetisZap is Ownable, IZap {
 
     /* ========== STATE VARIABLES ========== */
 
-    address private WNATIVE;
+    address private WNATIVE = 0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000;
     mapping(address => mapping(address => address)) private tokenBridgeForRouter;
     mapping(address => bool) public isFeeOnTransfer;
 
     mapping (address => bool) public useNativeRouter;
 
-    constructor(address _WNATIVE) Ownable() {
-    WNATIVE = _WNATIVE;
+    constructor() Ownable() {
     }
 
     /* ========== External Functions ========== */
