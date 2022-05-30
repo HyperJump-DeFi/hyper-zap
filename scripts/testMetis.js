@@ -12,7 +12,7 @@ const METIS = "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000";
 const router = "0xd96aeE439e6e5B4f3544bF105eb78F3b8B6CD774";
 const zapInPair = "0xc33d8ae2c4f5592b1987e263b2a124cd33e1f624"; // jump metis
 const zapInToken = "0xe3c82a836ec85311a433fbd9486efaf4b1afbf48"; // jump
-const liveZap = "TBD";
+const liveZap = "0xF1D52EEEFF276f6428e4B9e1B7Ee449b7B9d668D";
 const netswapPair_address = "0xCC603FE067651e6251E22C8008dB0E47f30D3db2";
 
 async function main() {
@@ -32,7 +32,7 @@ async function main() {
   console.log("owner wallet: %s", owner.address);
   let balance = await ethers.provider.getBalance(owner.address);
   console.log("owner balance: %s METIS", balance / 1e18);
-  
+
   // UINTMAX for approval
   const UINTMAX = ethers.BigNumber.from(
     "115792089237316195423570985008687907853269984665640564039457584007913129639935"
@@ -40,8 +40,8 @@ async function main() {
   // deploy
   console.log("\nDeploy zapper");
   const Zap = await ethers.getContractFactory("MetisZap");
-  const zap = await Zap.deploy();
-  //const zap = await Zap.attach(liveZap);
+  //   const zap = await Zap.deploy();
+  const zap = await Zap.attach(liveZap);
   console.log("New zapper address: ", zap.address);
   const useNativeOn = await zap.useNativeRouter(router);
   if (!useNativeOn) {
@@ -128,13 +128,21 @@ async function main() {
 
   // zapAcross
   console.log("\nzapAcross");
-  const netswapPair = await ethers.getContractAt("IHyperswapPair", netswapPair_address);
+  const netswapPair = await ethers.getContractAt(
+    "IHyperswapPair",
+    netswapPair_address
+  );
   let balNetswapPair = await netswapPair.balanceOf(signers[0].address);
   console.log("netswappair bal ", balNetswapPair.toString());
   console.log("Approving Zapper to spend this LP...");
   await netswapPair.connect(signers[0]).approve(zap.address, UINTMAX);
   if (balNetswapPair.toString() > 0) {
-    await zap.zapAcross(netswapPair_address, balNetswapPair, router, owner.address);
+    await zap.zapAcross(
+      netswapPair_address,
+      balNetswapPair,
+      router,
+      owner.address
+    );
   }
   balNetswapPair = await netswapPair.balanceOf(signers[0].address);
   console.log("netswappair bal ", balNetswapPair.toString());

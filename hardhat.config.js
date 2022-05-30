@@ -80,6 +80,12 @@ module.exports = {
         initialIndex: 1,
       },
     },
+    andromeda: {
+      url: "https://andromeda.metis.io/?owner=1088",
+      chainId: 1088,
+      accounts:
+        process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+    },
   },
   solidity: {
     compilers: [
